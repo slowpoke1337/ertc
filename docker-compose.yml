@@ -1,0 +1,77 @@
+version: "3.7"
+services:
+
+  postgres:
+    image: postgres:9.6
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    environment:
+     - POSTGRES_DB=jbpm
+     - POSTGRES_USER=jbpm
+     - POSTGRES_PASSWORD=jbpm
+    healthcheck:
+      test: [ "CMD", "pg_isready -U $POSTGRES_USER" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  jbpm:
+    image: jboss/jbpm-workbench-showcase
+    environment:
+     - JBPM_DB_DRIVER=postgres
+     - JBPM_DB_HOST=postgres
+    depends_on:
+     - postgres 
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    command:
+      - '--path.rootfs=/host'
+    pid: host
+    restart: unless-stopped
+    volumes:
+      - '/:/host:ro,rslave'
+
+  prometheus:
+      image: prom/prometheus
+      volumes:
+          - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      command:
+          - '--config.file=/etc/prometheus/prometheus.yml'
+
+  grafana:
+      image: grafana/grafana
+      volumes:
+      - type: bind
+        source: ./grafana-datasource.yml
+        target: /etc/grafana/provisioning/datasources/datasource.yml
+        read_only: true
+      - type: bind 
+        source: ./grafana-dashboard.yaml
+        target: /etc/grafana/provisioning/dashboards/main.yaml
+        read_only: true
+      - type: bind
+        source: ./grafana-node-exporter-full.json
+        target: /var/lib/grafana/dashboards/node-exporter-full.json
+        read_only: true
+      environment:
+      - GF_SECURITY_ADMIN_PASSWORD=tmppw
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/node-exporter-full.json
+      links:
+          - prometheus
+
+  nginx:
+    image: nginx:1.24.0
+    volumes:
+      - type: bind
+        source: ./nginx.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+    ports:
+      - 80:80
+
+volumes:
+  db-data:
+  
